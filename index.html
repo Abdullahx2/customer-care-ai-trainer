@@ -20,6 +20,7 @@
             border-radius: 20px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             overflow: hidden;
+            position: relative;
         }
         .header {
             background: linear-gradient(90deg, #4f46e5, #7c3aed);
@@ -121,6 +122,59 @@
             border-radius: 8px;
             font-size: 14px;
         }
+        /* KEY POPUP STYLES */
+        #keyPopup {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .popup-box {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+        .popup-box h3 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+        .key-input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #4f46e5;
+            border-radius: 10px;
+            font-size: 16px;
+            margin-bottom: 20px;
+            font-family: monospace;
+        }
+        .save-btn {
+            background: #4f46e5;
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 10px;
+            font-size: 18px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        .save-btn:hover { background: #4338ca; }
+        .key-note {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #666;
+        }
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
@@ -133,10 +187,22 @@
             .container { border-radius: 0; }
             .message-bubble { max-width: 85%; }
             body { padding: 0; }
+            .popup-box { padding: 25px; }
         }
     </style>
 </head>
 <body>
+    <!-- KEY POPUP -->
+    <div id="keyPopup">
+        <div class="popup-box">
+            <h3>🔑 Enter Your OpenAI API Key</h3>
+            <input type="password" id="keyInput" class="key-input" placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+            <button onclick="saveKey()" class="save-btn">Save & Start Training</button>
+            <p class="key-note">Key is saved only in your browser • Never shared with anyone</p>
+            <p class="key-note">Get key from: platform.openai.com/api-keys</p>
+        </div>
+    </div>
+
     <div class="container">
         <div class="header">
             <h1>🤖 Customer Care AI Trainer</h1>
@@ -150,7 +216,7 @@
         <div class="chat-container" id="chatContainer">
             <div class="message bot-message">
                 <div class="message-bubble bot-bubble">
-                    Hello! I'm your customer care training assistant. I'll help you practice professional responses. Type any client message below.
+                    Hello! I'm your customer care training assistant. Enter your OpenAI API key to start.
                 </div>
             </div>
         </div>
@@ -169,8 +235,13 @@
     </div>
 
     <script>
-        // ✅ REPLACE WITH YOUR OPENAI API KEY
-        const OPENAI_API_KEY = '';
+        // ✅ USER WILL ENTER KEY VIA POPUP
+        let OPENAI_API_KEY = localStorage.getItem('customerCareKey') || '';
+        
+        // Show popup if no key
+        if (!OPENAI_API_KEY) {
+            document.getElementById('keyPopup').style.display = 'flex';
+        }
         
         // Customer Care System Prompt (Your Rules)
         const SYSTEM_PROMPT = `You are a senior customer care agent. Follow these rules STRICTLY:
@@ -197,6 +268,35 @@ Now respond to the client's message:`;
             chatHistory.forEach(msg => addMessage(msg.text, msg.role));
         }
 
+        // Save key function
+        function saveKey() {
+            const key = document.getElementById('keyInput').value.trim();
+            if (!key) {
+                alert('Please enter your OpenAI API key');
+                return;
+            }
+            if (!key.startsWith('sk-')) {
+                alert('Invalid key format. Must start with "sk-"');
+                return;
+            }
+            
+            OPENAI_API_KEY = key;
+            localStorage.setItem('customerCareKey', key);
+            document.getElementById('keyPopup').style.display = 'none';
+            
+            // Update welcome message
+            chatContainer.innerHTML = `<div class="message bot-message">
+                <div class="message-bubble bot-bubble">
+                    ✅ Key saved! I'm ready to help. Type any client message to practice professional responses.
+                </div>
+            </div>`;
+            
+            chatHistory = [];
+            localStorage.setItem('customerCareChat', JSON.stringify(chatHistory));
+            
+            alert('✅ Key saved successfully! You can now use the trainer.');
+        }
+
         function addMessage(text, role) {
             const messageDiv = document.createElement('div');
             messageDiv.className = role === 'user' ? 'message user-message' : 'message bot-message';
@@ -217,6 +317,12 @@ Now respond to the client's message:`;
         }
 
         async function sendMessage() {
+            if (!OPENAI_API_KEY) {
+                document.getElementById('keyPopup').style.display = 'flex';
+                alert('Please enter your OpenAI API key first');
+                return;
+            }
+            
             const userMessage = messageInput.value.trim();
             if (!userMessage) return;
             
@@ -244,6 +350,10 @@ Now respond to the client's message:`;
                     })
                 });
                 
+                if (!response.ok) {
+                    throw new Error(`API Error: ${response.status}`);
+                }
+                
                 const data = await response.json();
                 const aiReply = data.choices[0]?.message?.content || 
                                'Thank you for your message. How can I assist you?';
@@ -252,7 +362,14 @@ Now respond to the client's message:`;
                 
             } catch (error) {
                 console.error('Error:', error);
-                addMessage('Sorry, I encountered an error. Please check your API key and try again.', 'assistant');
+                if (error.message.includes('401') || error.message.includes('403')) {
+                    localStorage.removeItem('customerCareKey');
+                    OPENAI_API_KEY = '';
+                    document.getElementById('keyPopup').style.display = 'flex';
+                    addMessage('❌ Invalid or expired API key. Please enter a valid key.', 'assistant');
+                } else {
+                    addMessage('Sorry, I encountered an error. Please try again.', 'assistant');
+                }
             } finally {
                 sendButton.disabled = false;
                 loading.classList.remove('active');
@@ -267,14 +384,14 @@ Now respond to the client's message:`;
             }
         });
 
-        // Clear chat button (optional)
+        // Clear chat button
         function clearChat() {
             if (confirm('Clear all chat history?')) {
                 chatHistory = [];
                 localStorage.removeItem('customerCareChat');
                 chatContainer.innerHTML = `<div class="message bot-message">
                     <div class="message-bubble bot-bubble">
-                        Hello! I'm your customer care training assistant. I'll help you practice professional responses. Type any client message below.
+                        Chat cleared. Ready for new practice session.
                     </div>
                 </div>`;
             }
