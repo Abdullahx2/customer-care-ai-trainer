@@ -195,11 +195,11 @@
     <!-- KEY POPUP -->
     <div id="keyPopup">
         <div class="popup-box">
-            <h3>🔑 Enter Your OpenAI API Key</h3>
+            <h3>🔑 Enter Your AI API Key</h3>
             <input type="password" id="keyInput" class="key-input" placeholder="sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
             <button onclick="saveKey()" class="save-btn">Save & Start Training</button>
-            <p class="key-note">Key is saved only in your browser • Never shared with anyone</p>
-            <p class="key-note">Get key from: platform.openai.com/api-keys</p>
+            <p class="key-note">Supports: DeepSeek API (Free) • OpenAI • Others</p>
+            <p class="key-note">Get free DeepSeek key: platform.deepseek.com/api_keys</p>
         </div>
     </div>
 
@@ -216,7 +216,7 @@
         <div class="chat-container" id="chatContainer">
             <div class="message bot-message">
                 <div class="message-bubble bot-bubble">
-                    Hello! I'm your customer care training assistant. Enter your OpenAI API key to start.
+                    Hello! I'm your customer care training assistant. Enter your AI API key to start.
                 </div>
             </div>
         </div>
@@ -236,10 +236,12 @@
 
     <script>
         // ✅ USER WILL ENTER KEY VIA POPUP
-        let OPENAI_API_KEY = localStorage.getItem('customerCareKey') || '';
+        let API_KEY = localStorage.getItem('customerCareKey') || '';
+        let API_ENDPOINT = 'https://api.deepseek.com/v1/chat/completions'; // ✅ DEEPSEEK
+        let MODEL_NAME = 'deepseek-chat'; // ✅ DEEPSEEK MODEL
         
         // Show popup if no key
-        if (!OPENAI_API_KEY) {
+        if (!API_KEY) {
             document.getElementById('keyPopup').style.display = 'flex';
         }
         
@@ -272,7 +274,7 @@ Now respond to the client's message:`;
         function saveKey() {
             const key = document.getElementById('keyInput').value.trim();
             if (!key) {
-                alert('Please enter your OpenAI API key');
+                alert('Please enter your API key');
                 return;
             }
             if (!key.startsWith('sk-')) {
@@ -280,7 +282,7 @@ Now respond to the client's message:`;
                 return;
             }
             
-            OPENAI_API_KEY = key;
+            API_KEY = key;
             localStorage.setItem('customerCareKey', key);
             document.getElementById('keyPopup').style.display = 'none';
             
@@ -317,9 +319,9 @@ Now respond to the client's message:`;
         }
 
         async function sendMessage() {
-            if (!OPENAI_API_KEY) {
+            if (!API_KEY) {
                 document.getElementById('keyPopup').style.display = 'flex';
-                alert('Please enter your OpenAI API key first');
+                alert('Please enter your API key first');
                 return;
             }
             
@@ -333,14 +335,15 @@ Now respond to the client's message:`;
             loading.classList.add('active');
             
             try {
-                const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                // ✅ DEEPSEEK API CALL
+                const response = await fetch(API_ENDPOINT, {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+                        'Authorization': `Bearer ${API_KEY}`,
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        model: 'gpt-3.5-turbo',
+                        model: MODEL_NAME,
                         messages: [
                             { role: 'system', content: SYSTEM_PROMPT },
                             { role: 'user', content: userMessage }
@@ -351,7 +354,8 @@ Now respond to the client's message:`;
                 });
                 
                 if (!response.ok) {
-                    throw new Error(`API Error: ${response.status}`);
+                    const errorText = await response.text();
+                    throw new Error(`API Error (${response.status}): ${errorText}`);
                 }
                 
                 const data = await response.json();
@@ -361,15 +365,24 @@ Now respond to the client's message:`;
                 addMessage(aiReply, 'assistant');
                 
             } catch (error) {
-                console.error('Error:', error);
+                console.error('Full Error:', error);
+                
+                let errorMsg = 'Sorry, I encountered an error. ';
+                
                 if (error.message.includes('401') || error.message.includes('403')) {
+                    errorMsg = '❌ Invalid or expired API key. Please enter a valid DeepSeek key.';
                     localStorage.removeItem('customerCareKey');
-                    OPENAI_API_KEY = '';
+                    API_KEY = '';
                     document.getElementById('keyPopup').style.display = 'flex';
-                    addMessage('❌ Invalid or expired API key. Please enter a valid key.', 'assistant');
+                } else if (error.message.includes('429')) {
+                    errorMsg = '⚠️ Rate limit exceeded. Please wait 60 seconds.';
+                } else if (error.message.includes('network') || error.message.includes('Failed to fetch')) {
+                    errorMsg = '🌐 Network error. Check your internet connection.';
                 } else {
-                    addMessage('Sorry, I encountered an error. Please try again.', 'assistant');
+                    errorMsg = 'Error: ' + error.message.substring(0, 100);
                 }
+                
+                addMessage(errorMsg, 'assistant');
             } finally {
                 sendButton.disabled = false;
                 loading.classList.remove('active');
